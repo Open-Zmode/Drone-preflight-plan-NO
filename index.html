@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flight plan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#e6eaf0;--ink:#14181f;--mut:#5b6573;--line:#b9c2cf;--acc:#163a6b;--bad:#c4361b;--ok:#1d7a4a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+.bar{position:sticky;top:0;z-index:5;background:var(--acc);color:#fff;display:flex;gap:8px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+.bar .t{margin-right:auto;font-weight:600}
+.bar .p{font-size:14px;opacity:.9}
+button{font:inherit;cursor:pointer;border-radius:6px}
+.bar button{border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;padding:6px 12px}
+.bar button.pri{background:#fff;color:var(--acc);border-color:#fff;font-weight:600}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.dz:focus-visible{outline:3px solid #f0a500;outline-offset:2px}
+.sheet{max-width:820px;margin:20px auto;background:#fff;padding:48px 56px;box-shadow:0 2px 14px rgba(0,0,0,.13)}
+.top{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px}
+input,textarea{font:inherit;color:inherit;width:100%;border:1px solid var(--line);border-radius:4px;padding:7px 9px;background:#fff}
+input[type=date]{width:auto}.top input[name=navn]{max-width:260px;text-align:right}
+textarea{min-height:110px;resize:vertical}
+.big{font-size:32px;font-weight:600;line-height:1.15;border:0;border-bottom:2px solid var(--line);border-radius:0;padding:4px 0;letter-spacing:-.01em}
+h2{font-size:17px;font-weight:600;color:var(--mut);letter-spacing:.04em;margin:34px 0 8px}
+h3{font-size:16px;font-weight:600;margin:22px 0 8px}
+table{border-collapse:collapse;width:100%;max-width:480px}
+td{border:1px solid var(--ink);padding:0}
+td input{border:0;border-radius:0}
+td:last-child{border:0;width:36px;text-align:center}
+.x{border:0;background:none;color:var(--mut);font-size:20px}
+.add{margin-top:8px;border:1px dashed var(--mut);background:none;padding:5px 12px;color:var(--mut)}
+.dz{border:2px dashed var(--line);border-radius:6px;min-height:140px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);padding:14px;margin-bottom:10px;position:relative;cursor:pointer}
+.dz.over{border-color:var(--acc);background:#eef3fb}
+.dz.has{border-style:solid;padding:6px}
+.dz img{max-width:100%;max-height:420px;display:block}
+.rm{position:absolute;top:8px;right:8px;background:#fff;border:1px solid var(--line);padding:2px 10px}
+.bad,.dz.bad{border-color:var(--bad)!important;background:#fdf0ed}
+tr.bad td{background:#fdf0ed}
+.bad::placeholder{color:var(--bad)}
+.dz.bad{color:var(--bad)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9;max-width:90vw}
+.toast.on{opacity:1}
+@media(max-width:640px){.sheet{padding:24px 18px;margin:0}.big{font-size:24px}.top{flex-direction:column}.top input[name=navn]{max-width:none;text-align:left}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="t">Flight plan</span>
+  <span class="p" id="prog"></span>
+  <button id="up" type="button">Åpne fil</button>
+  <button id="sv" type="button">Lagre utkast</button>
+  <button id="ex" type="button" class="pri">Eksporter PDF</button>
+  <input type="file" id="file" accept=".json,application/json" hidden>
+</div>
+
+<main class="sheet">
+  <div class="top">
+    <input type="date" id="dato" aria-label="Dato">
+    <input id="navn" name="navn" placeholder="Ditt navn" aria-label="Navn">
+  </div>
+  <input class="big" id="tittel" placeholder="Tittel, f.eks. Testflyvning med DJI Mini 3 Pro" aria-label="Tittel">
+  <input class="big" id="sted" placeholder="Sted, f.eks. På Glemmen VGS" aria-label="Sted" style="margin-top:6px">
+
+  <h2>Innledning</h2>
+  <textarea id="innledning" placeholder="Formål med oppdraget, værmelding (yr.no), dronens begrensninger og målinger fra værstasjon …" aria-label="Innledning"></textarea>
+
+  <h2>Utstyrsliste</h2>
+  <table><tbody id="eq"></tbody></table>
+  <button type="button" class="add" id="addrow">+ Legg til rad</button>
+
+  <h2>Støttesystemer</h2>
+  <h3>Værmelding</h3>
+  <div class="dz" data-img="vaer" tabindex="0"></div>
+  <textarea id="vaer_tekst" placeholder="Tolkning av værmeldingen og målinger fra værstasjon …" aria-label="Tekst om værmelding"></textarea>
+
+  <h3>Dronesoner.no</h3>
+  <div class="dz" data-img="dronesoner" tabindex="0"></div>
+  <textarea id="dronesoner_tekst" placeholder="Bildetekst, f.eks. ingen flyrestriksjoner i området …" aria-label="Tekst om dronesoner"></textarea>
+
+  <h3>Ninoxdrone 2</h3>
+  <div class="dz" data-img="ninox" tabindex="0"></div>
+  <textarea id="ninox_tekst" placeholder="Bildetekst, f.eks. flight plan er lagt inn i Ninoxdrone 2 …" aria-label="Tekst om Ninoxdrone"></textarea>
+
+  <h2>Bakkerisiko</h2>
+  <textarea id="bakke" placeholder="Utenforstående, bygninger, trær, avstand, sensorer …" aria-label="Bakkerisiko"></textarea>
+
+  <h2>Luftrisiko</h2>
+  <textarea id="luft" placeholder="Fugler, andre droner, bemannet luftfart, nødlandingsplass …" aria-label="Luftrisiko"></textarea>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const F=['dato','navn','tittel','sted','innledning','vaer_tekst','dronesoner_tekst','ninox_tekst','bakke','luft'];
+const IMG={vaer:null,dronesoner:null,ninox:null};
+let shown=false,tt;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),3500)}
+
+/* Bilder */
+function loadImg(k,file){
+  if(!file||!file.type.startsWith('image/')){toast('Filen må være et bilde');return}
+  const r=new FileReader();
+  r.onload=()=>{const im=new Image();im.onload=()=>{
+    const s=Math.min(1,1600/im.width),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+    IMG[k]={data:c.toDataURL('image/jpeg',.85),w:c.width,h:c.height};showImg(k);check()};im.src=r.result};
+  r.readAsDataURL(file);
+}
+function showImg(k){
+  const dz=$(`.dz[data-img=${k}]`),i=IMG[k];
+  dz.classList.toggle('has',!!i);
+  dz.innerHTML=i?`<img alt="Skjermbilde"><button type="button" class="rm">Fjern</button>`
+    :`<span>Dra og slipp skjermbilde her, klikk for å velge, eller lim inn med Ctrl+V</span>`;
+  if(i){dz.querySelector('img').src=i.data;dz.querySelector('.rm').onclick=e=>{e.stopPropagation();IMG[k]=null;showImg(k);check()}}
+}
+$$('.dz').forEach(dz=>{
+  const k=dz.dataset.img,inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';inp.hidden=true;inp.onchange=()=>{loadImg(k,inp.files[0]);inp.value=''};
+  dz.after(inp);
+  dz.onclick=()=>inp.click();
+  dz.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inp.click()}};
+  ['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('over')}));
+  ['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('over')}));
+  dz.addEventListener('drop',e=>loadImg(k,e.dataTransfer.files[0]));
+  dz.addEventListener('paste',e=>{const f=[...e.clipboardData.files][0];if(f){e.preventDefault();loadImg(k,f)}});
+  showImg(k);
+});
+
+/* Utstyr */
+function addRow(n='',a=''){
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td><input placeholder="Navn" aria-label="Navn på utstyr"></td><td style="width:110px"><input type="number" min="1" placeholder="Antall" aria-label="Antall"></td><td><button type="button" class="x" title="Fjern rad" aria-label="Fjern rad">×</button></td>';
+  const i=tr.querySelectorAll('input');i[0].value=n;i[1].value=a;
+  tr.querySelector('.x').onclick=()=>{if($$('#eq tr').length>1){tr.remove();check()}else toast('Minst én rad kreves')};
+  $('#eq').append(tr);
+}
+$('#addrow').onclick=()=>{addRow();check();$$('#eq tr:last-child input')[0].focus()};
+
+/* Data */
+function get(){
+  const d={v:1};F.forEach(k=>d[k]=$('#'+k).value.trim());
+  d.utstyr=$$('#eq tr').map(tr=>{const i=tr.querySelectorAll('input');return[i[0].value.trim(),i[1].value.trim()]});
+  d.bilder=IMG;return d;
+}
+function set(d){
+  F.forEach(k=>$('#'+k).value=d[k]||'');
+  $('#eq').innerHTML='';
+  (d.utstyr&&d.utstyr.length?d.utstyr:[['','']]).forEach(r=>addRow(r[0],r[1]));
+  Object.keys(IMG).forEach(k=>{IMG[k]=(d.bilder&&d.bilder[k])||null;showImg(k)});
+  check();
+}
+function missing(){
+  const d=get(),m=[];
+  F.forEach(k=>{if(!d[k])m.push('#'+k)});
+  d.utstyr.forEach((r,i)=>{if(!r[0]||!r[1])m.push(`#eq tr:nth-child(${i+1})`)});
+  Object.keys(IMG).forEach(k=>{if(!IMG[k])m.push(`.dz[data-img=${k}]`)});
+  return m;
+}
+function check(){
+  const m=missing(),total=F.length+$$('#eq tr').length+3;
+  $('#prog').textContent=`${total-m.length} av ${total} utfylt`;
+  $$('.bad').forEach(e=>e.classList.remove('bad'));
+  if(shown)m.forEach(s=>$(s).classList.add('bad'));
+}
+document.addEventListener('input',()=>check());
+
+/* Fil: lagre / åpne */
+$('#sv').onclick=()=>{
+  const d=get(),b=new Blob([JSON.stringify(d)],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download=`flightplan-${d.dato||'utkast'}.json`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Utkast lagret. Åpne filen senere for å fortsette.');
+};
+$('#up').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||d.v!==1)throw 0;set(d);toast('Fil åpnet')}catch(_){toast('Kunne ikke lese filen. Bruk en .json-fil lagret herfra.')}};
+  r.readAsText(f);e.target.value='';
+};
+
+/* PDF */
+$('#ex').onclick=()=>{
+  shown=true;check();const m=missing();
+  if(m.length){$(m[0]).scrollIntoView({behavior:'smooth',block:'center'});toast(`${m.length} felt mangler. Alle punkter må fylles ut.`);return}
+  const d=get(),doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}),M=20,CW=170;let y;
+  const dt=s=>s.split('-').reverse().join('.');
+  const head=()=>{doc.setFont('helvetica','normal');doc.setFontSize(11);doc.setTextColor(0);doc.text(dt(d.dato),M,18);doc.text(d.navn,M+CW,25,{align:'right'});y=38};
+  const need=h=>{if(y+h>282){doc.addPage();head()}};
+  const H=t=>{need(16);y+=5;doc.setFontSize(13);doc.setTextColor(100);doc.text(t,M,y);y+=7;doc.setTextColor(0)};
+  const S=t=>{need(14);y+=3;doc.setFontSize(12);doc.setTextColor(0);doc.text(t,M,y);y+=6};
+  const P=(t,s=11)=>{doc.setFontSize(s);doc.setTextColor(0);doc.splitTextToSize(t,CW).forEach(l=>{need(6);doc.text(l,M,y);y+=5.2});y+=2};
+  const I=k=>{const i=d.bilder[k];let w=CW,h=w*i.h/i.w;if(h>125){h=125;w=h*i.w/i.h}need(h+2);doc.addImage(i.data,'JPEG',M,y,w,h);y+=h+4};
+  head();
+  doc.setFontSize(26);
+  [d.tittel,d.sted].forEach(t=>doc.splitTextToSize(t,CW).forEach(l=>{doc.text(l,M,y);y+=11}));
+  y+=2;
+  H('Innledning');P(d.innledning);
+  H('Utstyrsliste');
+  doc.setFontSize(11);
+  [['Navn','Antall'],...d.utstyr].forEach(r=>{
+    const ls=doc.splitTextToSize(r[0],80),h=Math.max(7,ls.length*5+2);need(h);
+    doc.rect(M,y,90,h);doc.rect(M+90,y,30,h);
+    ls.forEach((l,j)=>doc.text(l,M+2,y+5+j*5));doc.text(r[1],M+92,y+5);y+=h;
+  });
+  y+=2;
+  H('Støttesystemer');
+  S('Værmelding');I('vaer');P(d.vaer_tekst);
+  S('Dronesoner.no');I('dronesoner');P(d.dronesoner_tekst);
+  S('Ninoxdrone 2');I('ninox');P(d.ninox_tekst);
+  H('Bakkerisiko');P(d.bakke);
+  H('Luftrisiko');P(d.luft);
+  doc.save(`flightplan-${d.dato}.pdf`);
+  toast('PDF eksportert');
+};
+
+/* Start */
+$('#dato').value=new Date().toISOString().slice(0,10);
+addRow();check();
+</script>
+</body>
+</html>
